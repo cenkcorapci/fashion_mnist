@@ -11,8 +11,8 @@ RANDOM_STATE = 41
 
 # Local files and folders
 HOME = expanduser("~")
-DL_MODELS_PATH = HOME + 'Research/pre-trained-models/cv/fashion_mnist'
-TB_LOGS_PATH = HOME + 'Research/tb-logs/cv/fashion_mnist'
+DL_MODELS_PATH = HOME + '/Research/pre-trained-models/cv/fashion_mnist'
+TB_LOGS_PATH = HOME + '/Research/tb-logs/cv/fashion_mnist'
 
 # create directories
 logging.info("Checking/creating directories...")
