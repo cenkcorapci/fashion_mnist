@@ -1,233 +1,193 @@
-import tensorflow as tf
+from tensorflow.keras import Model, Sequential
 from tensorflow.keras import backend as K
-from tensorflow.keras import initializers, layers
-from tensorflow.keras import models
+from tensorflow.keras import initializers
+from tensorflow.keras.layers import Activation, Conv2D, Lambda, Reshape
+from tensorflow.keras.layers import Dense, Layer, Input
+from tensorflow.keras.utils import get_custom_objects
 
 from dl.image_classification_model import ImageClassificationModel
 
 
-class Length(layers.Layer):
-    """
-    Compute the length of vectors. This is used to compute a Tensor that has the same shape with y_true in margin_loss
-    inputs: shape=[dim_1, ..., dim_{n-1}, dim_n]
-    output: shape=[dim_1, ..., dim_{n-1}]
-    """
-
-    def call(self, inputs, **kwargs):
-        return K.sqrt(K.sum(K.square(inputs), -1))
-
-    def compute_output_shape(self, input_shape):
-        return input_shape[:-1]
+def capsule_length(x):
+    return K.sqrt(K.sum(K.square(x), axis=-1))
 
 
-class Mask(layers.Layer):
-    """
-    Mask a Tensor with shape=[None, d1, d2] by the max value in axis=1.
-    Output shape: [None, d2]
-    """
-
-    def call(self, inputs, **kwargs):
-        # use true label to select target capsule, shape=[batch_size, num_capsule]
-        if type(inputs) is list:  # true label is provided with shape = [batch_size, n_classes], i.e. one-hot code.
-            assert len(inputs) == 2
-            inputs, mask = inputs
-        else:  # if no true label, mask by the max length of vectors of capsules
-            x = inputs
-            # Enlarge the range of values in x to make max(new_x)=1 and others < 0
-            x = (x - K.max(x, 1, True)) / K.epsilon() + 1
-            mask = K.clip(x, 0, 1)  # the max value in x clipped to 1 and other to 0
-
-        # masked inputs, shape = [batch_size, dim_vector]
-        inputs_masked = K.batch_dot(inputs, mask, [1, 1])
-        return inputs_masked
-
-    def compute_output_shape(self, input_shape):
-        if type(input_shape[0]) is tuple:  # true label provided
-            return tuple([None, input_shape[0][-1]])
-        else:
-            return tuple([None, input_shape[-1]])
+def squash(x):
+    l2_norm = K.sum(K.square(x), axis=-1, keepdims=True)
+    return l2_norm / (1 + l2_norm) * (x / (K.sqrt(l2_norm + K.epsilon())))
 
 
-def squash(vectors, axis=-1):
-    """
-    The non-linear activation used in Capsule. It drives the length of a large vector to near 1 and small vector to 0
-    :param vectors: some vectors to be squashed, N-dim tensor
-    :param axis: the axis to squash
-    :return: a Tensor with same shape as input vectors
-    """
-    s_squared_norm = K.sum(K.square(vectors), axis, keepdims=True)
-    scale = s_squared_norm / (1 + s_squared_norm) / K.sqrt(s_squared_norm)
-    return scale * vectors
+get_custom_objects().update({'squash': Activation(squash)})
 
 
-class CapsuleLayer(layers.Layer):
-    """
-    The capsule layer. It is similar to Dense layer. Dense layer has `in_num` inputs, each is a scalar, the output of the
-    neuron from the former layer, and it has `out_num` output neurons. CapsuleLayer just expand the output of the neuron
-    from scalar to vector. So its input shape = [None, input_num_capsule, input_dim_vector] and output shape = \
-    [None, num_capsule, dim_vector]. For Dense Layer, input_dim_vector = dim_vector = 1.
+def PrimaryCaps(capsule_dim, filters, kernel_size, strides=1, padding='valid'):
+    conv2d = Conv2D(
+        filters=filters,
+        kernel_size=kernel_size,
+        strides=strides,
+        padding=padding,
+    )
 
-    :param num_capsule: number of capsules in this layer
-    :param dim_vector: dimension of the output vectors of the capsules in this layer
-    :param num_routings: number of iterations for the routing algorithm
-    """
+    def eval_primary_caps(input_tensor):
+        x = conv2d(input_tensor)
+        reshaped = Reshape((-1, capsule_dim))(x)
+        return Lambda(squash)(reshaped)
 
-    def __init__(self, num_capsule, dim_vector, num_routing=3,
-                 kernel_initializer='glorot_uniform',
-                 bias_initializer='zeros',
-                 **kwargs):
-        super(CapsuleLayer, self).__init__(**kwargs)
-        self.num_capsule = num_capsule
-        self.dim_vector = dim_vector
-        self.num_routing = num_routing
+    return eval_primary_caps
+
+
+def margin_loss(lambda_=0.5, m_plus=0.9, m_minus=0.1):
+    def margin(y_true, y_pred):
+        loss = K.sum(
+            y_true * K.square(K.maximum(0., m_plus - y_pred)) +
+            lambda_ * (1 - y_true) * K.square(K.maximum(0., y_pred - m_minus)),
+            axis=1,
+        )
+        return loss
+
+    return margin
+
+
+class CapsuleLayer(Layer):
+    def __init__(
+        self,
+        output_capsules,
+        capsule_dim,
+        routing_iterations=3,
+        kernel_initializer='glorot_uniform',
+        activation='squash',
+        **kwargs):
+        self.output_capsules = output_capsules
+        self.capsule_dim = capsule_dim
+        self.routing_iterations = routing_iterations
         self.kernel_initializer = initializers.get(kernel_initializer)
-        self.bias_initializer = initializers.get(bias_initializer)
+        self.activation = Activation(activation)
+        super(CapsuleLayer, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        assert len(input_shape) >= 3, "The input Tensor should have shape=[None, input_num_capsule, input_dim_vector]"
-        self.input_num_capsule = input_shape[1] if input_shape[1] is not None else self.num_capsule
-        self.input_dim_vector = input_shape[2]
 
-        # Transform matrix
-        self.W = self.add_weight(
-            shape=[self.input_num_capsule, self.num_capsule, self.input_dim_vector, self.dim_vector],
+        self.kernel = self.add_weight(
+            name='kernel',
+            shape=(
+                input_shape[1],
+                self.output_capsules,
+                input_shape[2],
+                self.capsule_dim,
+            ),
             initializer=self.kernel_initializer,
-            name='W')
+            trainable=True
+        )
 
-        # Coupling coefficient. The redundant dimensions are just to facilitate subsequent matrix calculation.
-        self.bias = self.add_weight(shape=[1, self.input_num_capsule, self.num_capsule, 1, 1],
-                                    initializer=self.bias_initializer,
-                                    name='bias',
-                                    trainable=False)
-        self.built = True
+        super(CapsuleLayer, self).build(input_shape)
 
-    def call(self, inputs, training=None):
-        # inputs.shape=[None, input_num_capsule, input_dim_vector]
-        # Expand dims to [None, input_num_capsule, 1, 1, input_dim_vector]
-        inputs_expand = K.expand_dims(K.expand_dims(inputs, 2), 2)
+    def call(self, inputs, **kwargs):
+        inputs = K.expand_dims(inputs, axis=2)
+        inputs = K.repeat_elements(inputs, rep=self.output_capsules, axis=2)
+        U = K.map_fn(
+            lambda x: K.batch_dot(x, self.kernel, axes=[2, 2]), inputs)
 
-        # Replicate num_capsule dimension to prepare being multiplied by W
-        # Now it has shape = [None, input_num_capsule, num_capsule, 1, input_dim_vector]
-        inputs_tiled = K.tile(inputs_expand, [1, 1, self.num_capsule, 1, 1])
+        # initialize matrix of b_ij's
+        input_shape = K.shape(inputs)
+        B = K.zeros(
+            shape=(input_shape[0], input_shape[1], self.output_capsules))
+        for i in range(self.routing_iterations):
+            V, B_updated = self._routing_single_iter(B, U, i, input_shape)
+            B = B_updated
 
-        """
-        # Compute `inputs * W` by expanding the first dim of W. More time-consuming and need batch_size.
-        # Now W has shape  = [batch_size, input_num_capsule, num_capsule, input_dim_vector, dim_vector]
-        w_tiled = K.tile(K.expand_dims(self.W, 0), [self.batch_size, 1, 1, 1, 1])
+        return V
 
-        # Transformed vectors, inputs_hat.shape = [None, input_num_capsule, num_capsule, 1, dim_vector]
-        inputs_hat = K.batch_dot(inputs_tiled, w_tiled, [4, 3])
-        """
-        # Compute `inputs * W` by scanning inputs_tiled on dimension 0. This is faster but requires Tensorflow.
-        # inputs_hat.shape = [None, input_num_capsule, num_capsule, 1, dim_vector]
-        inputs_hat = tf.scan(lambda ac, x: K.batch_dot(x, self.W, [3, 2]),
-                             elems=inputs_tiled,
-                             initializer=K.zeros(
-                                 [self.input_num_capsule, self.num_capsule, 1, self.num_capsule, self.dim_vector]))
-        """
-        # Routing algorithm V1. Use tf.while_loop in a dynamic way.
-        def body(i, b, outputs):
-            c = tf.nn.softmax(self.bias, dim=2)  # dim=2 is the num_capsule dimension
-            outputs = squash(K.sum(c * inputs_hat, 1, keepdims=True))
-            b = b + K.sum(inputs_hat * outputs, -1, keepdims=True)
-            return [i-1, b, outputs]
-
-        cond = lambda i, b, inputs_hat: i > 0
-        loop_vars = [K.constant(self.num_routing), self.bias, K.sum(inputs_hat, 1, keepdims=True)]
-        _, _, outputs = tf.while_loop(cond, body, loop_vars)
-        """
-        # Routing algorithm V2. Use iteration. V2 and V1 both work without much difference on performance
-        assert self.num_routing > 0, 'The num_routing should be > 0.'
-        for i in range(self.num_routing):
-            c = tf.nn.softmax(self.bias)  # dim=2 is the num_capsule dimension
-            # outputs.shape=[None, 1, num_capsule, 1, dim_vector]
-            outputs = squash(K.sum(c * inputs_hat, 1, keepdims=True))
-
-            # last iteration needs not compute bias which will not be passed to the graph any more anyway.
-            if i != self.num_routing - 1:
-                # self.bias = K.update_add(self.bias, K.sum(inputs_hat * outputs, [0, -1], keepdims=True))
-                self.bias.assign_add(K.sum(inputs_hat * outputs, -1, keepdims=True))
-            # tf.summary.histogram('BigBee', self.bias)  # for debugging
-        return K.reshape(outputs, [-1, self.num_capsule, self.dim_vector])
+    def _routing_single_iter(self, B, U, i, input_shape):
+        C = K.softmax(B, axis=-1)
+        C = K.expand_dims(C, axis=-1)
+        C = K.repeat_elements(C, rep=self.capsule_dim, axis=-1)
+        S = K.sum(C * U, axis=1)
+        V = self.activation(S)
+        # no need to update b_ij's on last iteration
+        if i != self.routing_iterations:
+            V_expanded = K.expand_dims(V, axis=1)
+            V_expanded = K.tile(V_expanded, [1, input_shape[1], 1, 1])
+            B = B + K.sum(U * V_expanded, axis=-1)
+        return V, B
 
     def compute_output_shape(self, input_shape):
-        return tuple([None, self.num_capsule, self.dim_vector])
+        return None, self.output_capsules, self.capsule_dim
+
+    def get_config(self):
+        config = {
+            'output_capsules': self.output_capsules,
+            'capsule_dim': self.capsule_dim,
+            'routing_iterations': self.routing_iterations,
+            'kernel_initializer': self.kernel_initializer,
+            'activation': self.activation,
+        }
+        base_config = super(CapsuleLayer, self).get_config()
+        return dict(**base_config, **config)
 
 
-def PrimaryCap(inputs, dim_vector, n_channels, kernel_size, strides, padding):
-    """
-    Apply Conv2D `n_channels` times and concatenate all capsules
-    :param inputs: 4D tensor, shape=[None, width, height, channels]
-    :param dim_vector: the dim of the output vector of capsule
-    :param n_channels: the number of types of capsules
-    :return: output tensor, shape=[None, num_capsule, dim_vector]
-    """
-    output = layers.Conv2D(filters=dim_vector * n_channels, kernel_size=kernel_size, strides=strides, padding=padding)(
-        inputs)
-    outputs = layers.Reshape(target_shape=[-1, dim_vector])(output)
-    return layers.Lambda(squash)(outputs)
+class ReconstructionMask(Layer):
+    def call(self, inputs, **kwargs):
+        if type(inputs) == list and len(inputs) == 2:
+            x, mask = inputs[0], inputs[1]
+        else:
+            x = inputs
+            len_x = K.sqrt(K.sum(K.square(x), -1))
+            mask = K.one_hot(indices=K.argmax(len_x, 1),
+                             num_classes=K.shape(x)[1])
 
+        return K.batch_flatten(x * K.expand_dims(mask, -1))
 
-def margin_loss(y_true, y_pred):
-    """
-    Margin loss for Eq.(4). When y_true[i, :] contains not just one `1`, this loss should work too. Not test it.
-    :param y_true: [None, n_classes]
-    :param y_pred: [None, num_capsule]
-    :return: a scalar loss value.
-    """
-    L = y_true * K.square(K.maximum(0., 0.9 - y_pred)) + \
-        0.5 * (1 - y_true) * K.square(K.maximum(0., y_pred - 0.1))
+    def compute_output_shape(self, input_):
+        if type(input_) == list and len(input_) == 2:
+            input_shape = input_[0]
+            return None, input_shape[2]
+        else:
+            return None, input_[1] * input_[2]
 
-    return K.mean(K.sum(L, 1))
+    def get_config(self):
+        config = super(ReconstructionMask, self).get_config()
+        return config
 
 
 class CapsuleNet(ImageClassificationModel):
     def __init__(self, optimizer):
         super().__init__(optimizer)
-        self._model = self._generate_model(input_shape=[28, 28, 1],
-                                           n_class=10,
-                                           num_routing=3)
+        self._model = self._get_capsule_network(input_shape=(28, 28, 1))
         self._model.compile(optimizer=optimizer,
                             loss=[margin_loss, 'mse'],
                             loss_weights=[1., 0.0005],
                             metrics={'out_caps': 'accuracy'})
 
-    def _generate_model(self, input_shape, n_class, num_routing):
-        """
-        A Capsule Network on MNIST.
-        :param input_shape: data shape, 4d, [None, width, height, channels]
-        :param n_class: number of classes
-        :param num_routing: number of routing iterations
-        :return: A Keras Model with 2 inputs and 2 outputs
-        """
+    def _get_capsule_network(self, input_shape=(28, 28, 1), num_class=10):
+        # encoder network
+        input_tensor = Input(shape=input_shape, dtype='float32', name='data')
+        conv1 = Conv2D(
+            kernel_size=(9, 9), strides=(1, 1), filters=256,
+            activation='relu')(input_tensor)
+        primary_caps = PrimaryCaps(
+            capsule_dim=8, filters=256, kernel_size=(9, 9),
+            strides=(2, 2))(conv1)
+        capsule_layer = CapsuleLayer(
+            output_capsules=10, capsule_dim=16)(primary_caps)
+        lengths = Lambda(
+            capsule_length, output_shape=(num_class,), name='digits')(capsule_layer)
 
-        x = layers.Input(shape=input_shape)
+        input_mask = Input(shape=(10,), name='mask')
+        reconstruction_mask = ReconstructionMask()
+        masked_from_labels = reconstruction_mask([capsule_layer, input_mask])
+        masked_by_length = reconstruction_mask(capsule_layer)
 
-        # Layer 1: Just a conventional Conv2D layer
-        conv1 = layers.Conv2D(filters=256, kernel_size=9, strides=1, padding='valid', activation='relu', name='conv1')(
-            x)
+        # decoder network
+        decoder = Sequential(name='decoder')
+        decoder.add(Dense(512, activation='relu', input_shape=(160,)))
+        decoder.add(Dense(1024, activation='relu'))
+        decoder.add(Dense(784, activation='sigmoid'))
+        decoder.add(Reshape(input_shape))
 
-        # Layer 2: Conv2D layer with `squash` activation, then reshape to [None, num_capsule, dim_vector]
-        primarycaps = PrimaryCap(conv1, dim_vector=8, n_channels=32, kernel_size=9, strides=2, padding='valid')
+        training_model = Model(
+            [input_tensor, input_mask], [lengths, decoder(masked_from_labels)])
+        inference_model = Model(input_tensor, [lengths, decoder(masked_by_length)])
 
-        # Layer 3: Capsule layer. Routing algorithm works here.
-        digitcaps = CapsuleLayer(num_capsule=n_class, dim_vector=16, num_routing=num_routing, name='digitcaps')(
-            primarycaps)
-
-        # Layer 4: This is an auxiliary layer to replace each capsule with its length. Just to match the true label's shape.
-        # If using tensorflow, this will not be necessary. :)
-        out_caps = Length(name='out_caps')(digitcaps)
-
-        # Decoder network.
-        y = layers.Input(shape=(n_class,))
-        masked = Mask()([digitcaps, y])  # The true label is used to mask the output of capsule layer.
-        x_recon = layers.Dense(512, activation='relu')(masked)
-        x_recon = layers.Dense(1024, activation='relu')(x_recon)
-        x_recon = layers.Dense(784, activation='sigmoid')(x_recon)
-        x_recon = layers.Reshape(target_shape=[28, 28, 1], name='out_recon')(x_recon)
-
-        # two-input-two-output keras Model
-        return models.Model([x, y], [out_caps, x_recon])
+        return training_model, inference_model
 
     def train(self, data_generator, X_train, y_train, X_val, y_val, batch_size, epochs, callbacks):
         data_generator.fit(X_train)
@@ -243,3 +203,8 @@ class CapsuleNet(ImageClassificationModel):
         score = self._model.evaluate(X_test, y_test, verbose=0)
         return score
 
+
+if __name__ == '__main__':
+    from tensorflow.keras.optimizers import SGD
+
+    m = CapsuleNet(SGD)
