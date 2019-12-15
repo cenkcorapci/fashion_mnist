@@ -1,6 +1,6 @@
 from tensorflow.keras.datasets import fashion_mnist
 from tensorflow.keras.utils import to_categorical
-import tensorflow_datasets as tfds
+
 
 def get_data():
     ((X_train, y_train), (X_test, y_test)) = fashion_mnist.load_data()
