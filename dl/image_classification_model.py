@@ -6,7 +6,7 @@ class ImageClassificationModel(ABC):
         self._optimizer = optimizer
 
     @abstractmethod
-    def train(self, X_train, y_train, X_val, y_val, batch_size, epochs, callbacks):
+    def train(self, data_generator, X_train, y_train, X_val, y_val, batch_size, epochs, callbacks):
         raise NotImplementedError
 
     @abstractmethod
