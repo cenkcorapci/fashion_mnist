@@ -1,0 +1,11 @@
+sudo: true
+dist: Xenial
+jobs:
+  include:
+    - stage: build docker image
+      script:
+      - docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
+      - docker build -t fmnist_models .
+      - docker images
+      - docker tag fmnist_models $DOCKER_USERNAME/fmnist_models
+      - docker push $DOCKER_USERNAME/fmnist_models
