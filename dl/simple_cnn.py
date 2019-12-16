@@ -1,6 +1,5 @@
-from tensorflow.keras.layers import Conv2D, MaxPooling2D
-from tensorflow.keras.layers import Dense, Dropout, Flatten
-from tensorflow.keras.models import Sequential
+from tensorflow.python.keras import Model
+from tensorflow.python.keras.layers import *
 
 from dl.image_classification_model import ImageClassificationModel
 
@@ -11,22 +10,36 @@ class SimpleCNN(ImageClassificationModel):
 
         # input image dimensions
 
-        self._model = Sequential()
-        self._model.add(Conv2D(32, kernel_size=(3, 3),
-                               activation='relu',
-                               kernel_initializer='he_normal',
-                               input_shape=(28, 28, 1)))
-        self._model.add(MaxPooling2D((2, 2)))
-        self._model.add(Dropout(0.25))
-        self._model.add(Conv2D(64, (3, 3), activation='relu'))
-        self._model.add(MaxPooling2D(pool_size=(2, 2)))
-        self._model.add(Dropout(0.25))
-        self._model.add(Conv2D(128, (3, 3), activation='relu'))
-        self._model.add(Dropout(0.4))
-        self._model.add(Flatten())
-        self._model.add(Dense(128, activation='relu'))
-        self._model.add(Dropout(0.3))
-        self._model.add(Dense(10, activation='softmax'))
+        input = Input(shape=[28, 28, 1])
+        x = Conv2D(32, (5, 5), strides=1, padding='same')(input)
+        # x = BatchNormalization(momentum=0.1, epsilon=1e-5, gamma_initializer='uniform')(x)
+        x = Activation('relu')(x)
+        x = Conv2D(32, (5, 5), strides=1, padding='same')(x)
+        # x = BatchNormalization(momentum=0.1, epsilon=1e-5, gamma_initializer='uniform')(x)
+        x = Activation('relu')(x)
+        x = MaxPool2D(pool_size=2, strides=2, padding='same')(x)
+        x = Dropout(0.25)(x)
+
+        x = Conv2D(64, (3, 3), strides=1, padding='same')(x)
+        # x = BatchNormalization(momentum=0.1, epsilon=1e-5, gamma_initializer='uniform')(x)
+        x = Activation('relu')(x)
+        # x = Dropout (0.5)(x)
+        x = Conv2D(64, (3, 3), strides=1, padding='same')(x)
+        # x = BatchNormalization(momentum=0.1, epsilon=1e-5, gamma_initializer='uniform')(x)
+        x = Activation('relu')(x)
+        x = Conv2D(64, (3, 3), strides=1, padding='same')(x)
+        # x = BatchNormalization(momentum=0.1, epsilon=1e-5, gamma_initializer='uniform')(x)
+        x = Activation('relu')(x)
+
+        x = MaxPool2D(pool_size=2, strides=2, padding='same')(x)
+        x = Dropout(0.35)(x)
+        x = Flatten()(x)
+        x = Dense(200)(x)
+        x = Activation('relu')(x)
+        x = BatchNormalization()(x)
+        x = Dense(10)(x)
+        x = Activation('softmax')(x)
+        self._model = Model(inputs=input, outputs=x)
 
         # Specify the training configuration (optimizer, loss, metrics)
         self._model.compile(optimizer=self._optimizer,  # Optimizer
