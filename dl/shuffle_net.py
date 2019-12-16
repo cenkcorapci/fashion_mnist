@@ -172,7 +172,3 @@ class ShuffleNetV2(ImageClassificationModel):
                                             callbacks=callbacks,
                                             validation_data=(X_val, y_val))
         return history
-
-    def evaluate(self, X_test, y_test):
-        score = self._model.evaluate(X_test, y_test, verbose=0)
-        return score
