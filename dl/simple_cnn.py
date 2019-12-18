@@ -47,14 +47,3 @@ class SimpleCNN(ImageClassificationModel):
                             loss='categorical_crossentropy',
                             # List of metrics to monitor
                             metrics=['accuracy', 'categorical_crossentropy', 'categorical_accuracy'])
-
-    def train(self, data_generator, X_train, y_train, X_val, y_val, batch_size, epochs, callbacks):
-        data_generator.fit(X_train)
-        # fits the model on batches with real-time data augmentation:
-
-        history = self._model.fit_generator(data_generator.flow(X_train, y_train, batch_size=batch_size),
-                                            steps_per_epoch=len(X_train) / batch_size, epochs=epochs,
-                                            verbose=1,
-                                            callbacks=callbacks,
-                                            validation_data=(X_val, y_val))
-        return history

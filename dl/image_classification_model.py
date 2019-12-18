@@ -1,9 +1,11 @@
-from abc import ABC, abstractmethod
+from abc import ABC
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+from PIL import Image
 from sklearn.metrics import classification_report, confusion_matrix
+from tqdm import tqdm
 
 
 class ImageClassificationModel(ABC):
@@ -11,9 +13,22 @@ class ImageClassificationModel(ABC):
         self._optimizer = optimizer
         self._model = None
 
-    @abstractmethod
+        self._width = 56
+        self._height = 56
+        self._scale = True
+
     def train(self, data_generator, X_train, y_train, X_val, y_val, batch_size, epochs, callbacks):
-        raise NotImplementedError
+        data_generator.fit(X_train)
+        X_t = X_train
+        X_v = X_val
+        if self._scale:
+            X_t, X_v = self.scale_inputs(X_train, X_val)
+        history = self._model.fit_generator(data_generator.flow(X_t, y_train, batch_size=batch_size, shuffle=True),
+                                            steps_per_epoch=len(X_t) / batch_size, epochs=epochs,
+                                            verbose=1,
+                                            callbacks=callbacks,
+                                            validation_data=(X_v, y_val))
+        return history
 
     def evaluate(self, X_test, y_test, plot_confussion=False):
         # Confution Matrix and Classification Report
@@ -30,3 +45,17 @@ class ImageClassificationModel(ABC):
                         "ankle boot"]
         report = pd.DataFrame(classification_report(y_true, y_pred, target_names=target_names, output_dict=True))
         return report
+
+    def _scale_image(self, x):
+        img = np.array(Image.fromarray(x).resize((self._height, self._width)))
+        img = np.expand_dims(img, axis=3)
+        return np.repeat(img, 3, axis=2).astype(float)
+
+    def scale_inputs(self, X_train, X_val):
+        X_t = X_train.reshape((-1, 28, 28))
+        X_t = np.array(
+            [self._scale_image(x) for x in tqdm(iter(X_t), desc='Resizing training images')])
+        X_v = X_val.reshape((-1, 28, 28))
+        X_v = np.array(
+            [self._scale_image(x) for x in tqdm(iter(X_v), desc='Resizing training images')])
+        return X_t, X_v
