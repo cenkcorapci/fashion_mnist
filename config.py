@@ -2,7 +2,7 @@
 import logging
 import pathlib
 from os.path import expanduser
-
+import os
 # Logs
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
 
@@ -13,6 +13,9 @@ RANDOM_STATE = 41
 HOME = expanduser("~")
 DL_MODELS_PATH = HOME + '/Research/pre-trained-models/cv/fashion_mnist'
 TB_LOGS_PATH = HOME + '/Research/tb-logs/cv/fashion_mnist'
+
+TB_LOGS_PATH = os.getenv('TB_LOGS_PATH', TB_LOGS_PATH)
+DL_MODELS_PATH = os.getenv('DL_MODELS_PATH', DL_MODELS_PATH)
 
 # create directories
 logging.info("Checking/creating directories...")

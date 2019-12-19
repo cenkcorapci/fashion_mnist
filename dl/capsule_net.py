@@ -242,9 +242,3 @@ class CapsuleNet(ImageClassificationModel):
     def evaluate(self, X_test, y_test):
         score = self._model.evaluate(X_test, y_test, verbose=0)
         return score
-
-
-if __name__ == '__main__':
-    from tensorflow.keras.optimizers import SGD
-
-    m = CapsuleNet(SGD)

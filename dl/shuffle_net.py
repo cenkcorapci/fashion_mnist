@@ -78,6 +78,11 @@ def block(x, channel_map, bottleneck_ratio, repeat=1, stage=1):
 class ShuffleNetV2(ImageClassificationModel):
     def __init__(self, optimizer):
         super().__init__(optimizer)
+
+        self._height = 28
+        self._width = 28
+        self._scale = False
+
         self._model = self._generate_model(include_top=True,
                                            input_shape=(28, 28, 1),
                                            bottleneck_ratio=1,

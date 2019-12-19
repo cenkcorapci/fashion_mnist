@@ -30,6 +30,3 @@ class MobileNET(ImageClassificationModel):
                             # List of metrics to monitor
                             metrics=['accuracy', 'categorical_crossentropy', 'categorical_accuracy'])
 
-
-if __name__ == '__main__':
-    m = MobileNET(tf.keras.optimizers.Adam())

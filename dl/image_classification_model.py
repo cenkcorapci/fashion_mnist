@@ -1,11 +1,14 @@
 from abc import ABC
-
+import tensorflow as tf
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from PIL import Image
 from sklearn.metrics import classification_report, confusion_matrix
 from tqdm import tqdm
+from pathlib import Path
+from config import DL_MODELS_PATH
+import logging
 
 
 class ImageClassificationModel(ABC):
@@ -50,6 +53,21 @@ class ImageClassificationModel(ABC):
         img = np.array(Image.fromarray(x).resize((self._height, self._width)))
         img = np.expand_dims(img, axis=3)
         return np.repeat(img, 3, axis=2).astype(float)
+
+    def load_from_best_checkpoint(self, model_name, checkpoints_path=DL_MODELS_PATH):
+        best = 0
+        path_of_best_weights = None
+        for weight_file in Path(checkpoints_path).rglob('*.hdf5'):
+            p = str(weight_file)
+            if model_name in p:
+                accuracy = int(p.split('/')[-1].split('.')[-2])
+                if accuracy >= best:
+                    path_of_best_weights = p
+        if path_of_best_weights is not None:
+            self._model = tf.keras.models.load_model(path_of_best_weights)
+            logging.info(f'Loaded {path_of_best_weights}')
+        else:
+            logging.error('Can not find any model checkpoint')
 
     def scale_inputs(self, X_train, X_val):
         X_t = X_train.reshape((-1, 28, 28))

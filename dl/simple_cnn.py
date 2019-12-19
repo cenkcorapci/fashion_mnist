@@ -8,6 +8,10 @@ class SimpleCNN(ImageClassificationModel):
     def __init__(self, optimizer):
         super().__init__(optimizer)
 
+        self._height = 28
+        self._width = 28
+        self._scale = False
+
         # input image dimensions
 
         input = Input(shape=[28, 28, 1])
@@ -47,3 +51,10 @@ class SimpleCNN(ImageClassificationModel):
                             loss='categorical_crossentropy',
                             # List of metrics to monitor
                             metrics=['accuracy', 'categorical_crossentropy', 'categorical_accuracy'])
+
+
+if __name__ == '__main__':
+    from tensorflow.keras.optimizers import SGD
+
+    m = SimpleCNN(SGD())
+    m.load_from_best_checkpoint('simple_cnn_adam')

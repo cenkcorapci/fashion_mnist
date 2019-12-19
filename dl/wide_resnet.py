@@ -239,7 +239,3 @@ class WideResNet(ImageClassificationModel):
                             loss='categorical_crossentropy',
                             # List of metrics to monitor
                             metrics=['accuracy', 'categorical_crossentropy', 'categorical_accuracy'])
-
-
-if __name__ == '__main__':
-    m = WideResNet(tf.keras.optimizers.Adam())
