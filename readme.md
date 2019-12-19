@@ -6,7 +6,7 @@
 # Image Classification on fashion mnist
 ## Data Set
 Classification models that have been tried on [Zalando's Fashion MNIST data set.](https://github.com/zalandoresearch/fashion-mnist)
-- Data set contains images that belongs to 10 differenct categories of clothing.
+- Data set contains images that belongs to 10 different categories of clothing.
 - All images are grayscale with dimensions of 28x28
 - Data set contains an 60k samples that are evenly distributed between classes.
 ## Results
@@ -31,6 +31,19 @@ augmentations has been used, you can check the details and tune your selection o
 |Simple CNN|RMSProp|0.8912|
 |[ShuffleNet V2](https://arxiv.org/abs/1807.11164)|Adam|0.8548|
 
+### Confusion Matrix for the best model
+
+|Metric   |top               |trouser           |pullover          |dress             |coat              |sandal            |shirt             |sneaker           |bag               |ankle boot        |accuracy|macro avg         |weighted avg      |
+|---------|------------------|------------------|------------------|------------------|------------------|------------------|------------------|------------------|------------------|------------------|--------|------------------|------------------|
+|precision|0.8746465598491989|0.9979838709677419|0.9180651530108588|0.9482071713147411|0.9221789883268483|0.9870259481037924|0.8840579710144928|0.9719157472417251|0.9950099800399201|0.9681274900398407|0.9468  |0.9467218879909162|0.9467218879909161|
+|recall   |0.928             |0.99              |0.93              |0.952             |0.948             |0.989             |0.793             |0.969             |0.997             |0.972             |0.9468  |0.9468            |0.9468            |
+|f1-score |0.9005337214944202|0.9939759036144579|0.9239940387481372|0.9500998003992016|0.9349112426035503|0.988011988011988 |0.8360569319978914|0.9704556835252879|0.9960039960039959|0.9700598802395209|0.9468  |0.9464103186638452|0.9464103186638451|
+|support  |1000.0            |1000.0            |1000.0            |1000.0            |1000.0            |1000.0            |1000.0            |1000.0            |1000.0            |1000.0            |0.9468  |10000.0           |10000.0           |
+
+![confussion](https://raw.githubusercontent.com/cenkcorapci/fashion_mnist/master/images/confussion.png)
+
+- Seems like _tops_ are mistaken with _shirts_ quite often.
+- Confussion matrices looks similar across models, so i didn't try things like [ensembling](https://en.0wikipedia.org/wiki/Ensemble_learning)
 
 ## Usage
 ### Docker
@@ -43,6 +56,8 @@ and then
 ```bash
 docker run --gpus all -it --rm -p 8888:8888 cenkcorapci/fmnist_models
 ```
+The docker image is based on [tensorflow/tensorflow:latest-gpu-py3-jupyter](https://hub.docker.com/r/tensorflow/tensorflow/)
+which supports GPUs. Check out [their docs](https://github.com/tensorflow/tensorflow/tree/master/tensorflow/tools/dockerfiles) for more info on how to enable gpu support.
 ### Jupyter
 - `experiment.ipynb` is the starting point.
 - `config.py` contains paths for model checkpoints and TensorBoard logs.
