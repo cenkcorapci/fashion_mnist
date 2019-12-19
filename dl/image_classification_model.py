@@ -9,6 +9,9 @@ from tqdm import tqdm
 from pathlib import Path
 from config import DL_MODELS_PATH
 import logging
+from mlxtend.plotting import plot_confusion_matrix
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 class ImageClassificationModel(ABC):
@@ -25,7 +28,8 @@ class ImageClassificationModel(ABC):
         X_t = X_train
         X_v = X_val
         if self._scale:
-            X_t, X_v = self.scale_inputs(X_train, X_val)
+            X_t = self.scale_inputs(X_train)
+            X_v = self.scale_inputs(X_val)
         history = self._model.fit_generator(data_generator.flow(X_t, y_train, batch_size=batch_size, shuffle=True),
                                             steps_per_epoch=len(X_t) / batch_size, epochs=epochs,
                                             verbose=1,
@@ -34,15 +38,18 @@ class ImageClassificationModel(ABC):
         return history
 
     def evaluate(self, X_test, y_test, plot_confussion=False):
+        X_t = X_test
+        if self._scale:
+            X_t = self.scale_inputs(X_test)
+
         # Confution Matrix and Classification Report
-        Y_pred = self._model.predict(X_test)
+        Y_pred = self._model.predict(X_t)
         y_pred = np.argmax(Y_pred, axis=1)
         y_true = np.argmax(y_test, axis=1)
         if plot_confussion:
             print('Confusion Matrix')
-            fig = go.Figure(data=go.Heatmap(
-                z=confusion_matrix(y_true, y_pred)))
-            fig.show()
+            fig, ax = plot_confusion_matrix(conf_mat=confusion_matrix(y_true, y_pred))
+            plt.show()
 
         target_names = ["top", "trouser", "pullover", "dress", "coat", "sandal", "shirt", "sneaker", "bag",
                         "ankle boot"]
@@ -69,11 +76,8 @@ class ImageClassificationModel(ABC):
         else:
             logging.error('Can not find any model checkpoint')
 
-    def scale_inputs(self, X_train, X_val):
-        X_t = X_train.reshape((-1, 28, 28))
-        X_t = np.array(
-            [self._scale_image(x) for x in tqdm(iter(X_t), desc='Resizing training images')])
-        X_v = X_val.reshape((-1, 28, 28))
-        X_v = np.array(
-            [self._scale_image(x) for x in tqdm(iter(X_v), desc='Resizing training images')])
-        return X_t, X_v
+    def scale_inputs(self, data):
+        x = data.reshape((-1, 28, 28))
+        x = np.array(
+            [self._scale_image(img) for img in tqdm(iter(x), desc='Resizing training images')])
+        return x

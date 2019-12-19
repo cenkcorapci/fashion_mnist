@@ -1,3 +1,5 @@
+from __future__ import division
+
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras import initializers, layers
@@ -242,3 +244,10 @@ class CapsuleNet(ImageClassificationModel):
     def evaluate(self, X_test, y_test):
         score = self._model.evaluate(X_test, y_test, verbose=0)
         return score
+
+
+if __name__ == '__main__':
+    from tensorflow.keras.optimizers import Adam
+
+    m = CapsuleNet(Adam())
+    m.evaluate()
