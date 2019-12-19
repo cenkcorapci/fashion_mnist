@@ -5,4 +5,8 @@
 
 # Image Classification on fashion mnist
 
-
+|model name|accuracy|categorical accuracy|
+|---|---|---|
+|CapsuleNet(Adam, swa)|0.9465|0.9468|
+|MobileNetv2(Adam, swa)|0.9247|0.9247|
+|wide_resnet(Adam, swa)|0.9392|0.9392|

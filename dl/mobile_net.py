@@ -14,7 +14,7 @@ class MobileNET(ImageClassificationModel):
         self._height = 56
         self._scale = True
 
-        base_model = MobileNetV2(input_shape=(MobileNET._height, MobileNET._width, 3),
+        base_model = MobileNetV2(input_shape=(self._height, self._width, 3),
                                  weights=None,
                                  include_top=False,
                                  pooling='avg')
